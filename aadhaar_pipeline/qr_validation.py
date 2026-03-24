@@ -1,0 +1,342 @@
+"""
+Aadhaar QR code validation using the official decoding pipeline:
+  numeric string → big integer → hex → bytes → GZIP decompress → XML parse
+"""
+import cv2
+import gzip
+import json
+import xml.etree.ElementTree as ET
+from io import BytesIO
+
+try:
+    from pyzbar import pyzbar
+    PYZBAR_AVAILABLE = True
+except Exception as e:
+    PYZBAR_AVAILABLE = False
+    print(f"Warning: pyzbar not available - QR detection disabled. Error: {e}")
+
+
+class QRValidator:
+    """Detect and decode Aadhaar QR codes using the official numeric→XML pipeline."""
+
+    # ------------------------------------------------------------------ #
+    #  QR DETECTION
+    # ------------------------------------------------------------------ #
+
+    def _preprocess_variants(self, image):
+        """Yield preprocessed image variants for robust QR detection."""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
+
+        yield image                                                          # original
+        yield gray                                                           # grayscale
+        yield cv2.adaptiveThreshold(                                         # adaptive thresh
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        yield cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)[1]           # binary thresh
+        yield cv2.equalizeHist(gray)                                         # contrast
+        yield cv2.fastNlMeansDenoising(gray)                                 # denoised
+
+        for scale in (0.5, 1.5, 2.0):                                       # rescaled
+            w = int(image.shape[1] * scale)
+            h = int(image.shape[0] * scale)
+            yield cv2.resize(image, (w, h))
+
+    def detect_qr_code(self, image):
+        """
+        Scan image variants with pyzbar and return the first QR payload found.
+        Returns (raw_bytes, qr_type) or (None, None).
+        """
+        if not PYZBAR_AVAILABLE:
+            return None, None
+
+        for variant in self._preprocess_variants(image):
+            codes = pyzbar.decode(variant)
+            if codes:
+                return codes[0].data, codes[0].type
+
+        return None, None
+
+    # ------------------------------------------------------------------ #
+    #  DECODING PIPELINE  numeric → bigint → hex → bytes → gzip → XML
+    # ------------------------------------------------------------------ #
+
+    def _numeric_to_bytes(self, numeric_str):
+        """Convert the large numeric QR string to raw bytes via bigint → hex."""
+        numeric_str = numeric_str.strip()
+        big_int = int(numeric_str)          # step 1: numeric string → big integer
+        hex_str = format(big_int, 'x')      # step 2: big integer → hex string
+        if len(hex_str) % 2:                # ensure even length
+            hex_str = '0' + hex_str
+        return bytes.fromhex(hex_str)       # step 3: hex → bytes
+
+    def _decompress_bytes(self, raw_bytes):
+        """GZIP-decompress the raw bytes and return decompressed bytes."""
+        with gzip.GzipFile(fileobj=BytesIO(raw_bytes)) as gz:
+            return gz.read()
+
+    def _parse_xml(self, xml_string):
+        """Parse old-format Aadhaar QR (plain XML)."""
+        root = ET.fromstring(xml_string)
+
+        def attr(*keys):
+            for k in keys:
+                v = root.get(k)
+                if v:
+                    return v.strip()
+            return None
+
+        address_parts = [attr('co'), attr('house'), attr('lm'), attr('loc'),
+                         attr('vtc'), attr('subdist'), attr('dist'), attr('state'), attr('pc')]
+        address = ', '.join(p for p in address_parts if p) or None
+
+        photo_b64 = None
+        pht = root.find('Pht')
+        if pht is not None and pht.text:
+            photo_b64 = pht.text.strip()
+
+        return {
+            'uid': attr('uid'), 'name': attr('name'), 'dob': attr('dob'),
+            'gender': attr('gender'), 'co': attr('co'), 'house': attr('house'),
+            'landmark': attr('lm'), 'locality': attr('loc'), 'vtc': attr('vtc'),
+            'subdist': attr('subdist'), 'district': attr('dist'), 'state': attr('state'),
+            'pincode': attr('pc'), 'address': address, 'photo': photo_b64,
+        }
+
+    def _parse_secure_binary(self, data):
+        """
+        Parse new/secure Aadhaar QR format (post-2018).
+        Decompressed bytes use 0xFF as field delimiters.
+        """
+        parts = data.split(b'\xff')
+
+        def s(i):
+            """Safely get part i as a stripped string, never raises."""
+            try:
+                if i < len(parts):
+                    val = parts[i].decode('utf-8', errors='replace').strip()
+                    return val if val else None
+                return None
+            except Exception:
+                return None
+
+        version  = s(0)
+        name     = s(3)
+        dob      = s(4)
+        gender   = s(5)
+        co       = s(6)
+        district = s(7)
+        landmark = s(8)
+        house    = s(9)
+        # index 10 is empty in V2
+        pincode  = s(11)
+        street   = s(12)
+        state    = s(13)
+        vtc      = s(14)
+
+        # Photo is the last non-trivial bytes field
+        photo_bytes = parts[-1] if len(parts) > 18 else None
+        photo_present = bool(photo_bytes and len(photo_bytes) > 10)
+
+        address_parts = [co, house, street, landmark, vtc, district, state, pincode]
+        address = ', '.join(p for p in address_parts if p) or None
+
+        return {
+            'uid':      None,
+            'name':     name,
+            'dob':      dob,
+            'gender':   gender,
+            'co':       co,
+            'house':    house,
+            'landmark': landmark,
+            'locality': street,
+            'vtc':      vtc,
+            'subdist':  None,
+            'district': district,
+            'state':    state,
+            'pincode':  pincode,
+            'address':  address,
+            'photo':    photo_bytes if photo_present else None,
+            'qr_version': version,
+        }
+
+    def decode_qr_data(self, raw_bytes):
+        """
+        Full pipeline: raw QR bytes → structured dict.
+        Handles both old (XML) and new (0xFF-delimited binary) formats.
+        Returns (parsed_dict, error_string).  On success error_string is None.
+        """
+        try:
+            numeric_str = raw_bytes.decode('utf-8', errors='ignore').strip()
+
+            if not numeric_str.isdigit():
+                return None, 'qr_data_not_numeric'
+
+            compressed   = self._numeric_to_bytes(numeric_str)
+            decompressed = self._decompress_bytes(compressed)
+
+            # Detect format: old XML starts with '<', new binary uses 0xFF delimiters
+            if decompressed.lstrip(b' \t\r\n').startswith(b'<'):
+                xml_string = decompressed.decode('utf-8', errors='replace')
+                parsed = self._parse_xml(xml_string)
+                parsed['_format'] = 'old'
+            else:
+                parsed = self._parse_secure_binary(decompressed)
+                parsed['_format'] = 'secure'
+
+            return parsed, None
+
+        except (ValueError, OverflowError) as e:
+            return None, f'numeric_conversion_error: {e}'
+        except (OSError, EOFError) as e:
+            return None, f'gzip_error: {e}'
+        except ET.ParseError as e:
+            return None, f'xml_parse_error: {e}'
+        except Exception as e:
+            return None, f'decode_error: {e}'
+
+    # ------------------------------------------------------------------ #
+    #  COMPARISON HELPERS
+    # ------------------------------------------------------------------ #
+
+    def _norm(self, s):
+        return str(s).lower().strip().replace(' ', '') if s else ''
+
+    def _dates_match(self, d1, d2):
+        # normalize separators including pipe character OCR sometimes reads
+        def norm_date(d):
+            d = str(d).strip()
+            # extract digit sequences only
+            import re
+            parts = re.findall(r'\d+', d)
+            return ''.join(parts)
+        n1 = norm_date(d1)
+        n2 = norm_date(d2)
+        return bool(n1 and n2 and len(n1) >= 6 and n1 == n2)
+
+    # ------------------------------------------------------------------ #
+    #  PUBLIC ENTRY POINT
+    # ------------------------------------------------------------------ #
+
+    def validate_qr(self, image, ocr_data, qr_crop=None):
+        """
+        Detect QR, decode it, compare with OCR data.
+        Tries qr_crop first (YOLO-detected region), then falls back to full image.
+        Returns a result dict compatible with the pipeline.
+        """
+        raw_bytes = None
+
+        # try YOLO crop first at multiple scales
+        if qr_crop is not None and qr_crop.size > 0:
+            h, w = qr_crop.shape[:2]
+            for scale in [1.0, 2.0, 3.0]:
+                attempt = qr_crop if scale == 1.0 else cv2.resize(
+                    qr_crop, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_CUBIC)
+                raw_bytes, _ = self.detect_qr_code(attempt)
+                if raw_bytes:
+                    break
+
+        # fallback to full image
+        if raw_bytes is None:
+            raw_bytes, _ = self.detect_qr_code(image)
+
+        if raw_bytes is None:
+            return {
+                'qr_found': False, 'qr_valid': False, 'qr_format': None,
+                'match_score': 0, 'qr_raw_data': None, 'qr_parsed_data': None,
+                'comparison_details': {}, 'error': 'No QR code detected in image',
+            }
+
+        parsed, error = self.decode_qr_data(raw_bytes)
+
+        if parsed is None:
+            return {
+                'qr_found': True, 'qr_valid': False, 'qr_format': 'unknown',
+                'match_score': 0,
+                'qr_raw_data': raw_bytes.decode('utf-8', errors='replace')[:200],
+                'qr_parsed_data': None, 'comparison_details': {},
+                'error': error,
+            }
+
+        # Cross-reference QR data with OCR
+        matches, total = 0, 0
+        details = {}
+
+        import re as _re
+        def _extract_date(raw):
+            """Pull just the date digits from noisy OCR output."""
+            # DD/MM/YYYY or DD-MM-YYYY or DD|MM|YYYY
+            m = _re.search(r'(\d{1,2})[\/\-\|\\](\d{1,2})[\/\-\|\\](\d{4})', raw)
+            if m:
+                return f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+            # YYYY-MM-DD
+            m = _re.search(r'(\d{4})[\/\-\|\\](\d{1,2})[\/\-\|\\](\d{1,2})', raw)
+            if m:
+                return f"{m.group(3)}/{m.group(2)}/{m.group(1)}"
+            return raw
+
+        ocr_dob_clean = _extract_date(ocr_data.get('dob', ''))
+
+        qr_fmt = parsed.get('_format', 'old')
+        checks = [
+            # secure format doesn't store full UID — skip aadhaar_number check
+            ('aadhaar_number', parsed.get('uid') if qr_fmt != 'secure' else None,
+             ocr_data.get('aadhaar_number'), 'exact'),
+            ('name',           parsed.get('name'), ocr_data.get('name'),           'partial'),
+            ('dob',            parsed.get('dob'),  ocr_dob_clean,                  'date'),
+        ]
+
+        for field, qr_val, ocr_val, mode in checks:
+            if qr_val and ocr_val:
+                total += 1
+                if mode == 'exact':
+                    match = self._norm(qr_val) == self._norm(ocr_val)
+                elif mode == 'partial':
+                    qn, on = self._norm(qr_val), self._norm(ocr_val)
+                    match = qn in on or on in qn
+                else:  # date
+                    match = self._dates_match(qr_val, ocr_val)
+                if match:
+                    matches += 1
+                # store cleaned ocr_value so UI shows readable text
+                display_ocr = ocr_dob_clean if field == 'dob' else ocr_val
+                details[field] = {'qr_value': qr_val, 'ocr_value': display_ocr, 'match': match}
+
+        match_score = (matches / total * 100) if total else 0
+
+        return {
+            'qr_found': True,
+            'qr_valid': True,
+            'qr_format': qr_fmt,
+            'qr_raw_data': raw_bytes.decode('utf-8', errors='replace')[:200],
+            'qr_parsed_data': parsed,
+            'match_score': match_score,
+            'matches': matches,
+            'total_checks': total,
+            'comparison_details': details,
+            'error': None,
+        }
+
+    # ------------------------------------------------------------------ #
+    #  STANDALONE HELPER  (for testing / CLI use)
+    # ------------------------------------------------------------------ #
+
+    def process_image(self, image_path):
+        """
+        Process an Aadhaar card image file and return the full JSON result.
+        Useful for standalone testing.
+        """
+        image = cv2.imread(image_path)
+        if image is None:
+            return {'error': f'Could not read image: {image_path}'}
+
+        raw_bytes, _ = self.detect_qr_code(image)
+        if raw_bytes is None:
+            return {'error': 'No QR code detected'}
+
+        parsed, error = self.decode_qr_data(raw_bytes)
+        if parsed is None:
+            return {'error': error}
+
+        # Remove photo from JSON output (binary blob)
+        result = {k: v for k, v in parsed.items() if k != 'photo'}
+        result['photo_present'] = parsed.get('photo') is not None
+        return result
