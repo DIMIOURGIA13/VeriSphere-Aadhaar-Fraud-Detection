@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>VeriSphere | Aadhaar Fraud Detection</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%238083ff' d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z'/%3E%3C/svg%3E"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
@@ -122,6 +123,7 @@
 </div>
 <div class="hidden md:flex items-center gap-8">
 <a class="text-[#8083ff] border-b-2 border-[#8083ff] pb-1 text-sm font-medium" href="#">Dashboard</a>
+<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="/qr-decode">QR Decode</a>
 <a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Forensics</a>
 <a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Archive</a>
 <a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Network</a>
@@ -147,6 +149,10 @@
 <span class="material-symbols-outlined">grid_view</span>
 <span>Dashboard</span>
 </div>
+<a href="/qr-decode" class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide">
+<span class="material-symbols-outlined">qr_code_scanner</span>
+<span>QR Decode</span>
+</a>
 <div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer" data-soon>
 <span class="material-symbols-outlined">smart_card_reader</span>
 <span>Forensics</span>
@@ -282,7 +288,7 @@
 <div class="bg-surface-container-low p-6 rounded-xl border border-white/5 flex flex-col items-center">
 <span class="material-symbols-outlined text-[#8083ff] mb-2">query_stats</span>
 <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant opacity-60">Database</span>
-<span class="text-lg font-black mt-1">Global</span>
+<span class="text-lg font-black mt-1">Local</span>
 </div>
 </div>
 </div>

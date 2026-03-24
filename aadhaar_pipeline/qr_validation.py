@@ -141,23 +141,47 @@ class QRValidator:
             except Exception:
                 return None
 
-        version  = s(0)
-        # Reference number at index 2: first 4 digits = last 4 of Aadhaar UID
-        ref_number = s(2)
-        last4 = ref_number[:4] if ref_number and len(ref_number) >= 4 and ref_number[:4].isdigit() else None
-        name     = s(3)
-        dob      = s(4)
-        gender   = s(5)
-        co       = s(6)
-        district = s(7)
-        landmark = s(8)
-        house    = s(9)
-        pincode  = s(11)
-        street   = s(12)
-        state    = s(13)
-        vtc      = s(14)
+        # Auto-detect the base offset.
+        # The version field is a single digit ("2" or "3").
+        # When decoded from image via pyzbar there may be a leading binary byte
+        # that creates an extra empty/garbage part before the version.
+        # Find the first part that is exactly a single digit 2-9.
+        import re as _re
+        base = 0
+        for _i, _p in enumerate(parts[:5]):
+            try:
+                _v = _p.decode('utf-8', errors='replace').strip()
+                if _re.fullmatch(r'[2-9]', _v):
+                    base = _i
+                    break
+            except Exception:
+                pass
 
-        address_parts = [co, house, street, landmark, vtc, district, state, pincode]
+        def sf(i):
+            return s(base + i)
+
+        # Secure QR v3 field layout (0xFF-delimited), relative to base:
+        # 0: version, 1: ref_number (first 4 = last 4 of UID),
+        # 2: name, 3: dob, 4: gender, 5: co, 6: vtc (city),
+        # 7: post_office, 8: house, 9: street, 10: pincode,
+        # 11: district, 12: state, 13: locality, 14: subdist
+        version    = sf(0)
+        ref_number = sf(1)
+        last4 = ref_number[:4] if ref_number and len(ref_number) >= 4 and ref_number[:4].isdigit() else None
+        name     = sf(2)
+        dob      = sf(3)
+        gender   = sf(4)
+        co       = sf(5)
+        vtc      = sf(6)
+        house    = sf(8)
+        street   = sf(9)
+        pincode  = sf(10)
+        district = sf(11)
+        state    = sf(12)
+        landmark = sf(13)
+        subdist  = sf(14)
+
+        address_parts = [co, house, street, landmark, vtc, subdist, district, state, pincode]
         address = ', '.join(p for p in address_parts if p) or None
 
         photo_present = bool(photo_bytes and len(photo_bytes) > 100)
@@ -173,7 +197,7 @@ class QRValidator:
             'landmark':   landmark,
             'locality':   street,
             'vtc':        vtc,
-            'subdist':    None,
+            'subdist':    subdist,
             'district':   district,
             'state':      state,
             'pincode':    pincode,

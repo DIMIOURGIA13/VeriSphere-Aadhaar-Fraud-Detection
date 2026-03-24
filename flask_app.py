@@ -38,6 +38,55 @@ def index():
     return html
 
 
+@app.route("/qr-decode")
+def qr_decode_page():
+    return render_template_string(_QR_DECODE_HTML)
+
+
+@app.route("/decode-qr", methods=["POST"])
+def decode_qr():
+    data = request.get_json()
+    raw = (data or {}).get("raw", "").strip()
+    if not raw:
+        return jsonify({"error": "No QR data provided"}), 400
+    try:
+        from aadhaar_pipeline.qr_validation import QRValidator
+        import io
+        validator = QRValidator()
+        raw_bytes = raw.encode("utf-8")
+        parsed, error = validator.decode_qr_data(raw_bytes)
+        if parsed is None:
+            return jsonify({"error": error or "Failed to decode QR data"})
+
+        # extract and convert photo
+        photo_b64 = None
+        _photo = parsed.pop("photo", None)
+        if isinstance(_photo, (bytes, bytearray)) and len(_photo) > 100:
+            try:
+                from PIL import Image as _Img
+                img = _Img.open(io.BytesIO(bytes(_photo)))
+                buf = io.BytesIO()
+                img.convert("RGB").save(buf, format="JPEG", quality=85)
+                photo_b64 = base64.b64encode(buf.getvalue()).decode()
+            except Exception:
+                try:
+                    arr = np.frombuffer(bytes(_photo), dtype=np.uint8)
+                    img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img_cv is not None:
+                        _, buf = cv2.imencode(".jpg", img_cv)
+                        photo_b64 = base64.b64encode(buf).decode()
+                except Exception:
+                    pass
+
+        result = {k: (v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v)
+                  for k, v in parsed.items()}
+        result["photo_b64"] = photo_b64
+        return jsonify({"success": True, "data": result})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     if "image" not in request.files:
@@ -98,6 +147,164 @@ def _annotate(image, detections):
     return out
 
 
+_QR_DECODE_HTML = """<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>VeriSphere | QR Decode</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%238083ff' d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z'/%3E%3C/svg%3E"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+  body { background:#10131c; color:#e0e2ef; font-family:'Inter',sans-serif; }
+  .glass { background:#1c1f29; border:1px solid rgba(255,255,255,0.06); border-radius:12px; }
+  .field-row { display:flex; justify-content:space-between; align-items:flex-start;
+               padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .field-row:last-child { border-bottom:none; }
+  .field-label { font-size:11px; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.08em; color:#c7c4d7; min-width:130px; }
+  .field-value { font-size:13px; font-weight:500; text-align:right; max-width:65%; word-break:break-word; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- TopNav -->
+<header style="background:#10131c;border-bottom:1px solid rgba(255,255,255,0.06)"
+        class="flex justify-between items-center px-6 py-4">
+  <a href="/" class="text-xl font-black" style="background:linear-gradient(to right,#8083ff,#571bc1);-webkit-background-clip:text;-webkit-text-fill-color:transparent">VeriSphere</a>
+  <div class="flex gap-8">
+    <a href="/" class="text-sm font-medium" style="color:#c7c4d7">Dashboard</a>
+    <a href="/qr-decode" class="text-sm font-medium border-b-2 pb-1" style="color:#8083ff;border-color:#8083ff">QR Decode</a>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-6 py-12">
+  <div class="mb-8">
+    <h1 class="text-3xl font-black tracking-tight mb-2">📷 QR Code Decoder</h1>
+    <p style="color:#c7c4d7" class="text-sm">Paste raw QR data from a handheld scanner to decode Aadhaar fields instantly.</p>
+  </div>
+
+  <!-- Input -->
+  <div class="glass p-6 mb-6">
+    <label class="block text-xs font-bold uppercase tracking-widest mb-3" style="color:#c7c4d7">Raw QR Data</label>
+    <textarea id="qr-input" rows="5" placeholder="Paste QR string here and click Decode..."
+      class="w-full rounded-lg p-3 text-sm font-mono resize-none focus:outline-none"
+      style="background:#10131c;border:1px solid rgba(128,131,255,0.3);color:#e0e2ef;"></textarea>
+    <div class="flex gap-3 mt-4">
+      <button id="decode-btn" onclick="decodeQR()"
+        class="flex-1 py-3 rounded-xl font-bold text-white text-sm"
+        style="background:linear-gradient(to right,#8083ff,#571bc1);cursor:pointer">
+        🔍 Decode QR
+      </button>
+      <button onclick="document.getElementById('qr-input').value='';document.getElementById('result').innerHTML=''"
+        class="px-5 py-3 rounded-xl font-bold text-sm"
+        style="background:#272a34;color:#c7c4d7;cursor:pointer">
+        Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div id="result"></div>
+</main>
+
+<script>
+async function decodeQR() {
+  const raw = document.getElementById('qr-input').value.trim();
+  if (!raw) return;
+
+  const btn = document.getElementById('decode-btn');
+  btn.textContent = '⏳ Decoding...';
+  btn.disabled = true;
+
+  try {
+    const res  = await fetch('/decode-qr', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({raw})
+    });
+    const json = await res.json();
+    renderResult(json);
+  } catch(e) {
+    document.getElementById('result').innerHTML =
+      `<div class="glass p-6" style="border:1px solid #f87171;color:#f87171">Error: ${e}</div>`;
+  } finally {
+    btn.textContent = '🔍 Decode QR';
+    btn.disabled = false;
+  }
+}
+
+function renderResult(json) {
+  const el = document.getElementById('result');
+  if (json.error) {
+    el.innerHTML = `<div class="glass p-6" style="border:1px solid #f87171">
+      <p style="color:#f87171" class="font-bold">❌ Decode Failed</p>
+      <p class="text-sm mt-1" style="color:#c7c4d7">${json.error}</p>
+    </div>`;
+    return;
+  }
+
+  const d = json.data;
+  const fmt = d._format || 'unknown';
+  const fmtColor = fmt === 'secure' ? '#4ade80' : '#facc15';
+
+  const fields = [
+    ['Format',    fmt.toUpperCase()],
+    ['Name',      d.name],
+    ['Date of Birth', d.dob],
+    ['Gender',    d.gender === 'M' ? 'Male' : d.gender === 'F' ? 'Female' : d.gender],
+    ['UID / Last 4', d.uid || (d.last4 ? `xxxx xxxx ${d.last4}` : null)],
+    ['Address',   d.address],
+    ['Pincode',   d.pincode],
+    ['State',     d.state],
+    ['District',  d.district],
+    ['VTC',       d.vtc],
+    ['Version',   d.qr_version],
+  ].filter(([,v]) => v);
+
+  const rows = fields.map(([label, val]) => `
+    <div class="field-row">
+      <span class="field-label">${label}</span>
+      <span class="field-value">${val}</span>
+    </div>`).join('');
+
+  const photoHtml = d.photo_b64
+    ? `<div class="mt-6 pt-5" style="border-top:1px solid rgba(255,255,255,0.06)">
+         <p class="field-label mb-3">Photo (from QR)</p>
+         <img src="data:image/jpeg;base64,${d.photo_b64}"
+              style="width:100px;height:120px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1);cursor:zoom-in"
+              onclick="window.open(this.src)" title="Click to enlarge" />
+       </div>`
+    : `<p style="color:#9ca3af;font-size:11px;margin-top:16px;font-style:italic">
+         📷 No photo embedded in this QR code
+       </p>`;
+
+  el.innerHTML = `
+    <div class="glass p-6">
+      <div class="flex justify-between items-center mb-5">
+        <h2 class="font-black text-lg">Decoded Fields</h2>
+        <span class="text-xs font-bold px-3 py-1 rounded-full"
+              style="background:${fmtColor}22;color:${fmtColor}">${fmt.toUpperCase()} FORMAT</span>
+      </div>
+      ${rows}
+      ${photoHtml}
+    </div>`;
+}
+
+// auto-focus input and support Enter key
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('qr-input').focus();
+  document.getElementById('qr-input').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') decodeQR();
+  });
+});
+</script>
+</body>
+</html>"""
+
+
 def _make_serialisable(obj):
     """Recursively convert any non-JSON-safe types (bytes, numpy, etc.) to strings."""
     if isinstance(obj, bytes):
@@ -148,14 +355,35 @@ def _get_glue_js():
   fileInput.addEventListener('change', () => {
     if (!fileInput.files.length) return;
     selectedFile = fileInput.files[0];
+
+    // ── clear old results — restore idle state ─────────────────────────────
+    const resultsCol = document.querySelector('.xl\\\\:col-span-7');
+    if (resultsCol) {
+      resultsCol.innerHTML = `
+        <div class="glass-card rounded-xl flex-1 flex flex-col items-center justify-center p-12 text-center border-white/[0.04]">
+          <div class="relative mb-8">
+            <div class="absolute inset-0 bg-[#8083ff]/10 blur-[60px] rounded-full"></div>
+            <span class="material-symbols-outlined text-[120px] text-[#8083ff]/20 relative z-10" style="font-variation-settings:'wght' 200;">shield_with_heart</span>
+          </div>
+          <h2 class="text-3xl font-black mb-4 tracking-tight">Ready to Analyse</h2>
+          <p class="text-on-surface-variant max-w-md mx-auto leading-relaxed mb-10">
+            Card loaded. Press <strong>Analyse Card</strong> to begin the multi-stage verification process.
+          </p>
+        </div>`;
+    }
     // show preview
     const url = URL.createObjectURL(selectedFile);
     if (previewWrap) {
       previewWrap.innerHTML = `
         <img src="${url}" class="w-full h-full object-contain rounded-xl cursor-zoom-in" title="Click to enlarge"
           onclick="_openLightbox(this.src)" />
-        <div class="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-2 py-1 rounded pointer-events-none">
-          🔍 Click to enlarge
+        <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+          <span class="bg-black/60 text-white text-[10px] px-2 py-1 rounded max-w-[70%] truncate">
+            � ${selectedFile.name}
+          </span>
+          <span class="bg-black/60 text-white text-[10px] px-2 py-1 rounded">
+            🔍 Click to enlarge
+          </span>
         </div>`;
     }
     // enable button — swap to gradient style
@@ -166,6 +394,8 @@ def _get_glue_js():
       analyzeBtn.classList.add('bg-gradient-to-r', 'from-[#8083ff]', 'to-[#571bc1]',
         'text-white', 'shadow-[0_0_20px_rgba(128,131,255,0.35)]', 'cursor-pointer',
         'hover:opacity-90', 'transition-all');
+      // auto-start analysis immediately after file is selected
+      analyzeBtn.click();
     }
   });
 
@@ -184,29 +414,141 @@ def _get_glue_js():
   }
 
   // ── analyze button ─────────────────────────────────────────────────────────
-  const loadingQuotes = [
-    '🔍 Detecting card regions...',
-    '📖 Reading text fields...',
-    '🔢 Validating Aadhaar number...',
-    '📷 Decoding QR code...',
-    '🧪 Checking for tampering...',
-    '📊 Computing fraud score...',
-    '🛡️ Running forensics...',
-    '✅ Finalising verdict...',
+  const stages = [
+    { icon: 'qr_code_scanner',  label: 'QR Decode',       color: '#60a5fa', ms: 900  },
+    { icon: 'text_fields',      label: 'OCR Extract',      color: '#8083ff', ms: 900  },
+    { icon: 'manage_search',    label: 'Verhoeff Check',   color: '#4ade80', ms: 700  },
+    { icon: 'face',             label: 'Photo Match',      color: '#facc15', ms: 900  },
+    { icon: 'policy',           label: 'Fraud Scoring',    color: '#f87171', ms: 700  },
   ];
+
+  function showProcessingAnimation(imgUrl) {
+    const resultsCol = document.querySelector('.xl\\\\:col-span-7');
+    if (!resultsCol) return;
+
+    // build stage pills HTML
+    const pills = stages.map((st, i) => `
+      <div id="_st_${i}" class="flex flex-col items-center gap-2 opacity-30 transition-all duration-500" style="transition:opacity 0.6s,transform 0.6s">
+        <div id="_stc_${i}" class="w-14 h-14 rounded-full border-2 flex items-center justify-center relative"
+             style="border-color:${st.color}33">
+          <span class="material-symbols-outlined text-2xl" style="color:${st.color}66">${st.icon}</span>
+          <svg id="_stsvg_${i}" class="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 56 56">
+            <circle cx="28" cy="28" r="26" fill="none" stroke="${st.color}" stroke-width="2"
+              stroke-dasharray="163" stroke-dashoffset="163"
+              style="transition:stroke-dashoffset 0.7s ease-in-out" id="_stcirc_${i}"/>
+          </svg>
+        </div>
+        <span class="text-[10px] font-bold uppercase tracking-wider" style="color:${st.color}88">${st.label}</span>
+      </div>`).join('');
+
+    resultsCol.innerHTML = `
+      <div class="glass-card rounded-xl flex-1 flex flex-col items-center justify-center p-10 text-center relative overflow-hidden" id="_proc_panel">
+        <!-- particle canvas -->
+        <canvas id="_pcv" class="absolute inset-0 w-full h-full pointer-events-none opacity-40"></canvas>
+
+        <!-- radar rings -->
+        <div class="relative mb-8 flex items-center justify-center" style="width:160px;height:160px">
+          ${[0,1,2].map(r=>`
+          <div class="absolute rounded-full border border-[#8083ff]/20 animate-ping"
+               style="width:${80+r*40}px;height:${80+r*40}px;animation-duration:${2.4+r*0.7}s;animation-delay:${r*0.5}s"></div>`).join('')}
+          <div class="w-20 h-20 rounded-full bg-[#8083ff]/10 border border-[#8083ff]/30 flex items-center justify-center relative z-10"
+               style="box-shadow:0 0 30px rgba(128,131,255,0.25)">
+            ${imgUrl ? `<img src="${imgUrl}" class="w-full h-full object-cover rounded-full opacity-70"/>` :
+              `<span class="material-symbols-outlined text-4xl text-[#8083ff]/60">shield</span>`}
+          </div>
+        </div>
+
+        <!-- status text -->
+        <div id="_proc_label" class="text-sm font-bold text-[#8083ff] mb-1 tracking-wide">Initialising...</div>
+        <div class="text-xs text-on-surface-variant opacity-50 mb-8">Multi-stage cryptographic verification</div>
+
+        <!-- stage pills -->
+        <div class="flex gap-6 mb-8 flex-wrap justify-center">${pills}</div>
+
+        <!-- overall progress bar -->
+        <div class="w-full max-w-xs bg-surface-container-highest rounded-full h-1.5 overflow-hidden">
+          <div id="_prog_bar" class="h-full rounded-full bg-gradient-to-r from-[#8083ff] to-[#571bc1]"
+               style="width:0%;transition:width 0.7s ease-in-out;box-shadow:0 0 8px rgba(128,131,255,0.5)"></div>
+        </div>
+        <div id="_prog_pct" class="text-[10px] font-mono text-on-surface-variant opacity-40 mt-2">0%</div>
+      </div>`;
+
+    // particle canvas animation
+    const cvs = document.getElementById('_pcv');
+    if (cvs) {
+      const ctx = cvs.getContext('2d');
+      const pts = Array.from({length:40}, () => ({
+        x: Math.random(), y: Math.random(),
+        vx: (Math.random()-.5)*.0008, vy: (Math.random()-.5)*.0008,
+        r: Math.random()*1.5+.5, a: Math.random()
+      }));
+      let raf;
+      function drawPts() {
+        cvs.width = cvs.offsetWidth; cvs.height = cvs.offsetHeight;
+        ctx.clearRect(0,0,cvs.width,cvs.height);
+        pts.forEach(p => {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x<0||p.x>1) p.vx*=-1;
+          if (p.y<0||p.y>1) p.vy*=-1;
+          ctx.beginPath();
+          ctx.arc(p.x*cvs.width, p.y*cvs.height, p.r, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(128,131,255,${p.a*0.6})`;
+          ctx.fill();
+        });
+        raf = requestAnimationFrame(drawPts);
+      }
+      drawPts();
+      resultsCol._stopParticles = () => cancelAnimationFrame(raf);
+    }
+
+    // animate stages sequentially — loop back on last stage while server is still working
+    let elapsed = 0;
+    let stageTimers = [];
+    stages.forEach((st, i) => {
+      const t = setTimeout(() => {
+        const el    = document.getElementById(`_st_${i}`);
+        const circ  = document.getElementById(`_stcirc_${i}`);
+        const label = document.getElementById('_proc_label');
+        if (el)    { el.style.opacity='1'; el.style.transform='scale(1.1)'; }
+        if (circ)  circ.style.strokeDashoffset = '0';
+        if (label) label.textContent = st.label + '...';
+        const pct = Math.round((i+1)/stages.length*82);
+        const bar   = document.getElementById('_prog_bar');
+        const pctEl = document.getElementById('_prog_pct');
+        if (bar)   bar.style.width = pct+'%';
+        if (pctEl) pctEl.textContent = pct+'%';
+        if (i > 0) {
+          const prev = document.getElementById(`_st_${i-1}`);
+          if (prev) { prev.style.opacity='0.45'; prev.style.transform='scale(1)'; }
+        }
+        // on last stage: keep pulsing the label so it doesn't feel stuck
+        if (i === stages.length - 1) {
+          const dots = ['Finalising verdict.', 'Finalising verdict..', 'Finalising verdict...'];
+          let di = 0;
+          const pulse = setInterval(() => {
+            const lbl = document.getElementById('_proc_label');
+            if (!lbl) { clearInterval(pulse); return; }
+            lbl.textContent = dots[di++ % dots.length];
+          }, 500);
+          resultsCol._stopPulse = () => clearInterval(pulse);
+        }
+      }, elapsed);
+      stageTimers.push(t);
+      elapsed += st.ms;
+    });
+    resultsCol._stopStages = () => stageTimers.forEach(clearTimeout);
+  }
 
   if (analyzeBtn) {
     analyzeBtn.addEventListener('click', async () => {
       if (!selectedFile) return;
 
-      // start rotating quotes
-      let qi = 0;
-      analyzeBtn.innerHTML = `<span class="material-symbols-outlined animate-spin" style="animation:spin 1s linear infinite">progress_activity</span>&nbsp;${loadingQuotes[0]}`;
+      const imgUrl = previewWrap ? previewWrap.querySelector('img')?.src : null;
+      showProcessingAnimation(imgUrl);
+
+      // update button
+      analyzeBtn.innerHTML = `<span class="material-symbols-outlined" style="display:inline-block;animation:spin 1s linear infinite">progress_activity</span>&nbsp;Analysing...`;
       analyzeBtn.disabled = true;
-      const quoteTimer = setInterval(() => {
-        qi = (qi + 1) % loadingQuotes.length;
-        analyzeBtn.innerHTML = `<span class="material-symbols-outlined" style="display:inline-block;animation:spin 1s linear infinite">progress_activity</span>&nbsp;${loadingQuotes[qi]}`;
-      }, 1400);
 
       const fd = new FormData();
       fd.append('image', selectedFile);
@@ -214,12 +556,24 @@ def _get_glue_js():
       try {
         const res  = await fetch('/analyze', { method: 'POST', body: fd });
         const data = await res.json();
+        // finish progress bar
+        const bar = document.getElementById('_prog_bar');
+        const pctEl = document.getElementById('_prog_pct');
+        const lastStage = document.getElementById(`_st_${stages.length-1}`);
+        if (bar) bar.style.width = '100%';
+        if (pctEl) pctEl.textContent = '100%';
+        if (lastStage) { lastStage.style.opacity='1'; lastStage.style.transform='scale(1.1)'; }
+        // stop particles and pulse
+        const rc = document.querySelector('.xl\\\\:col-span-7');
+        if (rc && rc._stopParticles) rc._stopParticles();
+        if (rc && rc._stopPulse) rc._stopPulse();
+        // short pause so user sees 100% before results
+        await new Promise(r => setTimeout(r, 300));
         if (data.error) { alert('Error: ' + data.error); return; }
         renderResults(data);
       } catch (err) {
         alert('Request failed: ' + err);
       } finally {
-        clearInterval(quoteTimer);
         analyzeBtn.innerHTML = '<span class="material-symbols-outlined">search</span>&nbsp;Analyze Card';
         analyzeBtn.disabled = false;
       }

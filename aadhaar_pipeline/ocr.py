@@ -8,10 +8,10 @@ _reader = None
 _reader_en = None
 
 
-def get_reader(languages=["en", "hi"]):
+def get_reader(languages=["en"]):
     global _reader
     if _reader is None:
-        _reader = easyocr.Reader(["en", "hi"], gpu=False)
+        _reader = easyocr.Reader(["en"], gpu=False)
     return _reader
 
 
@@ -101,11 +101,11 @@ def _fix_name_ocr(text):
     return text
 
 
-def extract_text(crop, languages=["en", "hi"]):
+def extract_text(crop, languages=["en"]):
     """Pull text out of a single cropped region."""
     if crop is None or crop.size == 0:
         return ""
-    reader = get_reader(languages)
+    reader = get_reader()
     processed = _preprocess_for_ocr(crop, aggressive=False)
     results = reader.readtext(processed, detail=0, paragraph=False)
     return " ".join(results).strip()
@@ -144,7 +144,7 @@ def extract_text_digits(crop):
     if crop is None or crop.size == 0:
         return ""
     processed = _preprocess_for_ocr(crop, aggressive=True)
-    reader = get_reader(["en", "hi"])
+    reader = get_reader()
     results = reader.readtext(processed, detail=0, paragraph=False, allowlist="0123456789 ")
     return " ".join(results).strip()
 
