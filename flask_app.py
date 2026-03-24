@@ -68,6 +68,7 @@ def analyze():
         result["annotated_image"] = annotated_b64
         # make result JSON-serialisable
         result.pop("qr_fields", None)
+        result = _make_serialisable(result)
         return jsonify(result)
 
     except Exception as e:
@@ -95,6 +96,28 @@ def _annotate(image, detections):
         cv2.putText(out, lbl, (x1 + 3, max(y1 - 4, 14)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, (10, 10, 10), 1)
     return out
+
+
+def _make_serialisable(obj):
+    """Recursively convert any non-JSON-safe types (bytes, numpy, etc.) to strings."""
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, dict):
+        return {k: _make_serialisable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_serialisable(i) for i in obj]
+    # numpy scalar types
+    try:
+        import numpy as np
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+    except ImportError:
+        pass
+    return obj
 
 
 def _get_glue_js():
@@ -128,7 +151,12 @@ def _get_glue_js():
     // show preview
     const url = URL.createObjectURL(selectedFile);
     if (previewWrap) {
-      previewWrap.innerHTML = `<img src="${url}" class="w-full h-full object-cover rounded-xl" />`;
+      previewWrap.innerHTML = `
+        <img src="${url}" class="w-full h-full object-contain rounded-xl cursor-zoom-in" title="Click to enlarge"
+          onclick="_openLightbox(this.src)" />
+        <div class="absolute bottom-2 right-2 bg-black/50 text-white text-[10px] px-2 py-1 rounded pointer-events-none">
+          🔍 Click to enlarge
+        </div>`;
     }
     // enable button — swap to gradient style
     if (analyzeBtn) {
@@ -198,13 +226,32 @@ def _get_glue_js():
     });
   }
 
-  // inject spin keyframe once
+  // inject spin keyframe + lightbox once
   if (!document.getElementById('_spin_style')) {
     const s = document.createElement('style');
     s.id = '_spin_style';
-    s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+    s.textContent = `
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #_lightbox { display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85);
+        align-items:center; justify-content:center; cursor:zoom-out; }
+      #_lightbox.open { display:flex; }
+      #_lightbox img { max-width:90vw; max-height:90vh; object-fit:contain; border-radius:12px;
+        box-shadow:0 0 60px rgba(128,131,255,0.3); }
+    `;
     document.head.appendChild(s);
+
+    // lightbox element
+    const lb = document.createElement('div');
+    lb.id = '_lightbox';
+    lb.innerHTML = '<img id="_lightbox_img" src="" />';
+    lb.addEventListener('click', () => lb.classList.remove('open'));
+    document.body.appendChild(lb);
   }
+
+  window._openLightbox = function(src) {
+    document.getElementById('_lightbox_img').src = src;
+    document.getElementById('_lightbox').classList.add('open');
+  };
 
   // ── render results ─────────────────────────────────────────────────────────
   function renderResults(d) {
@@ -251,6 +298,18 @@ def _get_glue_js():
     const flags     = forensics.flags_triggered || 0;
     const flagColor = flags >= 2 ? '#f87171' : flags === 1 ? '#facc15' : '#4ade80';
 
+    const photoCmp    = consistency.photo_comparison || {};
+    const photoDec    = photoCmp.decision || 'UNAVAILABLE';
+    const photoSSIM   = photoCmp.ssim != null ? (photoCmp.ssim * 100).toFixed(1) + '%' : '—';
+    const photoColor  = photoDec === 'MATCH' ? '#4ade80' : photoDec === 'SUSPICIOUS' ? '#facc15' : photoDec === 'NO_MATCH' ? '#f87171' : '#9ca3af';
+    const photoBadge  = photoDec === 'MATCH' ? '✓' : photoDec === 'SUSPICIOUS' ? '⚠' : photoDec === 'NO_MATCH' ? '✗' : '—';
+    const photoRow = `<div class="px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-4">
+        <div class="w-[26px] h-[26px] rounded flex items-center justify-center font-bold text-sm" style="background:${photoColor}22;color:${photoColor}">${photoBadge}</div>
+        <div><div class="text-sm font-medium">Face Photo Match</div><div class="text-xs text-on-surface-variant">${photoDec === 'UNAVAILABLE' ? 'No QR photo available' : photoDec + ' — SSIM ' + photoSSIM}</div></div>
+      </div>
+    </div>`;
+
     const findingsHtml = reasons.map(r =>
       `<li class="flex items-start space-x-3">
         <div class="mt-1 w-2 h-2 rounded-full flex-shrink-0" style="background:${verdictColor};box-shadow:0 0 8px ${verdictColor}"></div>
@@ -258,8 +317,63 @@ def _get_glue_js():
       </li>`
     ).join('');
 
-    const annotatedHtml = annotated
-      ? `<img src="data:image/jpeg;base64,${annotated}" class="w-full h-full object-cover" />`
+    // ── QR parsed data ────────────────────────────────────────────────────────
+    const qrParsed = consistency.qr_parsed_data || null;
+    const qrComp   = consistency.qr_comparison || {};
+    function qrRow(label, field, fallback) {
+      const val   = (qrParsed && qrParsed[field] != null) ? qrParsed[field] : (fallback || '—');
+      const comp  = qrComp[field];
+      const match = comp ? comp.match : null;
+      const dot   = match === false
+        ? `<span style="color:#f87171" title="Mismatch with OCR">✗</span>`
+        : match === true
+          ? `<span style="color:#4ade80" title="Matches OCR">✓</span>`
+          : '';
+      return `<div class="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+        <span class="text-xs text-on-surface-variant uppercase tracking-wider">${label}</span>
+        <span class="text-xs font-semibold text-right max-w-[60%] truncate">${val} ${dot}</span>
+      </div>`;
+    }
+    // UID row — secure format stores only last 4 digits
+    const last4Val  = qrParsed && qrParsed['last4'];
+    const last4Comp = qrComp['last4'];
+    const last4Match = last4Comp ? last4Comp.match : null;
+    const last4Dot  = last4Match === false
+      ? `<span style="color:#f87171" title="Mismatch with OCR">✗</span>`
+      : last4Match === true
+        ? `<span style="color:#4ade80" title="Matches OCR">✓</span>`
+        : '';
+    const uidDisplay = qrParsed && qrParsed['uid']
+      ? qrParsed['uid']
+      : last4Val
+        ? `xxxx xxxx ${last4Val} ${last4Dot}`
+        : '<span class="italic text-on-surface-variant/50">Not stored (secure QR)</span>';
+    const uidRow = `<div class="flex justify-between items-center py-2 border-b border-white/5">
+      <span class="text-xs text-on-surface-variant uppercase tracking-wider">UID / Last 4</span>
+      <span class="text-xs font-semibold text-right max-w-[60%]">${uidDisplay}</span>
+    </div>`;
+    const qrDataHtml = !qrAvail
+      ? `<p class="text-xs text-on-surface-variant/60 italic">QR code not decoded — ${consistency.error || 'no data'}</p>`
+      : `<div class="text-[10px] font-bold text-on-surface-variant/50 uppercase tracking-widest mb-3">
+           Format: ${qrFmt} &nbsp;·&nbsp; ${qrMatch}% field match
+         </div>
+         ${qrRow('Name',           'name',   null)}
+         ${qrRow('Date of Birth',  'dob',    null)}
+         ${uidRow}
+         ${qrRow('Gender',         'gender', null)}
+         ${qrRow('Address',        'address',null)}
+         ${(qrParsed && qrParsed.photo_b64) ? `
+         <div class="mt-4">
+           <div class="text-xs text-on-surface-variant uppercase tracking-wider mb-2">Photo (from QR)</div>
+           <img src="data:image/jpeg;base64,${qrParsed.photo_b64}"
+                class="w-24 h-28 object-cover rounded-lg border border-white/10 cursor-zoom-in"
+                onclick="_openLightbox(this.src)" title="Click to enlarge" />
+         </div>` : `
+         <div class="mt-3 text-[9px] text-on-surface-variant/40 italic">
+           📷 No photo embedded — physical cards omit it (only eAadhaar digital QR contains photo)
+         </div>`}
+         <p class="text-[9px] text-on-surface-variant/40 mt-3 italic">✓ = matches OCR &nbsp; ✗ = mismatch with OCR &nbsp;·&nbsp; Secure QR does not store full UID (UIDAI privacy policy)</p>`;    const annotatedHtml = annotated
+      ? `<img src="data:image/jpeg;base64,${annotated}" class="w-full h-auto rounded-lg" style="display:block;" />`
       : '<div class="text-on-surface-variant text-xs text-center p-4">No annotated image</div>';
 
     // build the right-column results HTML
@@ -318,6 +432,7 @@ def _get_glue_js():
               <div><div class="text-sm font-medium">Tampering Detection</div><div class="text-xs text-on-surface-variant">${tText}</div></div>
             </div>
           </div>
+          ${photoRow}
         </div>
       </div>
 
@@ -346,13 +461,21 @@ def _get_glue_js():
       </div>
 
       <div class="glass-panel p-6 rounded-xl">
+        <h3 class="text-sm font-bold tracking-wider uppercase text-on-surface-variant mb-4">QR Code Data</h3>
+        ${qrDataHtml}
+      </div>
+
+      <div class="glass-panel p-6 rounded-xl">
         <h3 class="text-sm font-bold tracking-wider uppercase text-on-surface-variant mb-4">Key Findings</h3>
         <ul class="space-y-3">${findingsHtml}</ul>
       </div>
 
       <div class="glass-panel p-4 rounded-xl">
         <h3 class="text-sm font-bold tracking-wider uppercase text-on-surface-variant mb-3">Detected Regions</h3>
-        <div class="rounded-lg overflow-hidden aspect-[1.6/1]">${annotatedHtml}</div>
+        <div class="rounded-lg overflow-hidden cursor-zoom-in" onclick="_openLightbox(this.querySelector('img').src)">
+          ${annotatedHtml}
+        </div>
+        <p class="text-[10px] text-on-surface-variant/50 text-center mt-2">Click to enlarge</p>
       </div>
     `;
 

@@ -128,7 +128,61 @@ def run_pipeline(image_path, yolo_weights, resnet_weights=None, device="cpu",
     consistency["qr_format"]      = qr_result.get("qr_format")
     consistency["qr_match_score"] = qr_result.get("match_score", 0)
     consistency["qr_comparison"]  = qr_result.get("comparison_details", {})
+    consistency["qr_parsed_data"] = qr_result.get("qr_parsed_data") or {}
+    # convert photo bytes (JPEG2000) → JPEG base64 so browser can display it
+    _parsed = consistency["qr_parsed_data"]
+    _photo = _parsed.get("photo")
+    if isinstance(_photo, (bytes, bytearray)) and len(_photo) > 100:
+        import base64 as _b64
+        import io as _io
+        converted = False
+        # Try Pillow first (needs imagecodecs for JP2)
+        try:
+            from PIL import Image as _Img
+            img = _Img.open(_io.BytesIO(bytes(_photo)))
+            buf = _io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG", quality=85)
+            consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf.getvalue()).decode()
+            converted = True
+        except Exception:
+            pass
+        # Fallback: OpenCV (handles JP2 natively on most builds)
+        if not converted:
+            try:
+                import numpy as _np
+                arr = _np.frombuffer(bytes(_photo), dtype=_np.uint8)
+                img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if img_cv is not None:
+                    _, buf = cv2.imencode(".jpg", img_cv)
+                    consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf).decode()
+                    converted = True
+            except Exception:
+                pass
+        if not converted:
+            print("[DEBUG] photo: could not decode JP2 — imagecodecs or OpenCV JP2 support needed")
+    _raw_qr_photo_for_compare = bytes(_photo) if _photo else None  # save before pop
+    consistency["qr_parsed_data"].pop("photo", None)  # remove raw bytes
     consistency["qr_error"]       = qr_result.get("error")
+
+    # step 5b — photo comparison (QR photo vs card face crop)
+    photo_comparison = {"decision": "UNAVAILABLE", "fraud_contribution": 0}
+    _face_crops = crops.get("face", [])
+    _face_crop  = _face_crops[0] if _face_crops else None
+    if _raw_qr_photo_for_compare and _face_crop is not None:
+        from aadhaar_pipeline.photo_compare import compare_photos
+        photo_comparison = compare_photos(_raw_qr_photo_for_compare, _face_crop)
+        log(verbose, f"Photo comparison: {photo_comparison['decision']} (SSIM={photo_comparison.get('ssim')})")
+        # factor photo into QR match score — photo is an additional QR field
+        photo_dec = photo_comparison.get("decision", "UNAVAILABLE")
+        if photo_dec != "UNAVAILABLE":
+            # treat photo as one extra check: MATCH=pass, SUSPICIOUS=half, NO_MATCH=fail
+            photo_pass = 1.0 if photo_dec == "MATCH" else 0.5 if photo_dec == "SUSPICIOUS" else 0.0
+            old_score  = consistency.get("qr_match_score", 0)
+            # blend: existing score covers N fields, photo adds 1 more
+            n_fields   = max(qr_result.get("total_checks", 2), 1)
+            new_score  = (old_score * n_fields + photo_pass * 100) / (n_fields + 1)
+            consistency["qr_match_score"] = round(new_score, 1)
+    consistency["photo_comparison"] = photo_comparison
     log(verbose, f"Consistency: {consistency['overall_score']} | QR match: {consistency['qr_match_score']:.0f}%")
 
     # step 6 — tampering detection

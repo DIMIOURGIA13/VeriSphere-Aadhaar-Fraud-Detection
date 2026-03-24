@@ -104,12 +104,35 @@ class QRValidator:
     def _parse_secure_binary(self, data):
         """
         Parse new/secure Aadhaar QR format (post-2018).
-        Decompressed bytes use 0xFF as field delimiters.
+        Text fields are 0xFF-delimited. Photo (JPEG2000) is appended after
+        the last text field as a continuous binary blob.
+        JPEG2000 signatures: b'\xff\x4f' (codestream) or b'\x00\x00\x00\x0c\x6a\x50' (JP2 box)
         """
-        parts = data.split(b'\xff')
+        # JPEG2000 markers to search for
+        JP2_SIGS = [
+            b'\xff\x4f',                        # J2K codestream SOC marker
+            b'\x00\x00\x00\x0c\x6a\x50\x20\x20',  # JP2 file signature box
+            b'\xff\xd8\xff',                    # JPEG fallback
+        ]
+
+        # Find where the photo binary starts by scanning for JP2 signature
+        photo_start = -1
+        for sig in JP2_SIGS:
+            idx = data.find(sig)
+            if idx > 10:  # must be after some text fields
+                photo_start = idx
+                break
+
+        if photo_start > 0:
+            text_data  = data[:photo_start]
+            photo_bytes = data[photo_start:]
+        else:
+            text_data  = data
+            photo_bytes = None
+
+        parts = text_data.split(b'\xff')
 
         def s(i):
-            """Safely get part i as a stripped string, never raises."""
             try:
                 if i < len(parts):
                     val = parts[i].decode('utf-8', errors='replace').strip()
@@ -119,6 +142,9 @@ class QRValidator:
                 return None
 
         version  = s(0)
+        # Reference number at index 2: first 4 digits = last 4 of Aadhaar UID
+        ref_number = s(2)
+        last4 = ref_number[:4] if ref_number and len(ref_number) >= 4 and ref_number[:4].isdigit() else None
         name     = s(3)
         dob      = s(4)
         gender   = s(5)
@@ -126,35 +152,33 @@ class QRValidator:
         district = s(7)
         landmark = s(8)
         house    = s(9)
-        # index 10 is empty in V2
         pincode  = s(11)
         street   = s(12)
         state    = s(13)
         vtc      = s(14)
 
-        # Photo is the last non-trivial bytes field
-        photo_bytes = parts[-1] if len(parts) > 18 else None
-        photo_present = bool(photo_bytes and len(photo_bytes) > 10)
-
         address_parts = [co, house, street, landmark, vtc, district, state, pincode]
         address = ', '.join(p for p in address_parts if p) or None
 
+        photo_present = bool(photo_bytes and len(photo_bytes) > 100)
+
         return {
-            'uid':      None,
-            'name':     name,
-            'dob':      dob,
-            'gender':   gender,
-            'co':       co,
-            'house':    house,
-            'landmark': landmark,
-            'locality': street,
-            'vtc':      vtc,
-            'subdist':  None,
-            'district': district,
-            'state':    state,
-            'pincode':  pincode,
-            'address':  address,
-            'photo':    photo_bytes if photo_present else None,
+            'uid':        None,
+            'last4':      last4,
+            'name':       name,
+            'dob':        dob,
+            'gender':     gender,
+            'co':         co,
+            'house':      house,
+            'landmark':   landmark,
+            'locality':   street,
+            'vtc':        vtc,
+            'subdist':    None,
+            'district':   district,
+            'state':      state,
+            'pincode':    pincode,
+            'address':    address,
+            'photo':      photo_bytes if photo_present else None,
             'qr_version': version,
         }
 
@@ -280,6 +304,9 @@ class QRValidator:
             # secure format doesn't store full UID — skip aadhaar_number check
             ('aadhaar_number', parsed.get('uid') if qr_fmt != 'secure' else None,
              ocr_data.get('aadhaar_number'), 'exact'),
+            # for secure format, compare last 4 digits
+            ('last4', parsed.get('last4') if qr_fmt == 'secure' else None,
+             _re.sub(r'\D', '', ocr_data.get('aadhaar_number', ''))[-4:] or None, 'exact'),
             ('name',           parsed.get('name'), ocr_data.get('name'),           'partial'),
             ('dob',            parsed.get('dob'),  ocr_dob_clean,                  'date'),
         ]

@@ -62,36 +62,49 @@ def make_decision(yolo_detections, verhoeff_result, consistency_result, tamperin
                 ocr_n = qr_comparison.get("name", {}).get("ocr_value", "?")
                 qr_n  = qr_comparison.get("name", {}).get("qr_value", "?")
                 reasons.append(f"Name mismatch — OCR read '{ocr_n}', QR says '{qr_n}'")
-                score += 0.10
+                score += 0.20
             if qr_comparison.get("dob", {}).get("match") is False:
                 ocr_d = qr_comparison.get("dob", {}).get("ocr_value", "?")
                 qr_d  = qr_comparison.get("dob", {}).get("qr_value", "?")
                 reasons.append(f"Date of birth mismatch — OCR read '{ocr_d}', QR says '{qr_d}'")
-                score += 0.10
+                score += 0.20
             if qr_comparison.get("aadhaar_number", {}).get("match") is False:
                 ocr_a = qr_comparison.get("aadhaar_number", {}).get("ocr_value", "?")
                 qr_a  = qr_comparison.get("aadhaar_number", {}).get("qr_value", "?")
                 reasons.append(f"Aadhaar number mismatch — OCR read '{ocr_a}', QR UID is '{qr_a}'")
-                score += 0.15
+                score += 0.25
+            if qr_comparison.get("last4", {}).get("match") is False:
+                ocr_l = qr_comparison.get("last4", {}).get("ocr_value", "?")
+                qr_l  = qr_comparison.get("last4", {}).get("qr_value", "?")
+                reasons.append(f"Aadhaar last 4 digits mismatch — card shows '{ocr_l}', QR stores '{qr_l}'")
+                score += 0.25
         else:
             # fallback to old consistency checks
             if consistency_result.get("name_match", {}).get("match") is False:
                 ocr_n = consistency_result.get("name_match", {}).get("ocr_name", "?")
                 qr_n  = consistency_result.get("name_match", {}).get("qr_name", "?")
                 reasons.append(f"Name mismatch — OCR read '{ocr_n}', QR says '{qr_n}'")
-                score += 0.10
+                score += 0.20
             if consistency_result.get("dob_match", {}).get("match") is False:
                 ocr_d = consistency_result.get("dob_match", {}).get("ocr_dob", "?")
                 qr_d  = consistency_result.get("dob_match", {}).get("qr_dob", "?")
                 reasons.append(f"Date of birth mismatch — OCR read '{ocr_d}', QR says '{qr_d}'")
-                score += 0.10
+                score += 0.20
             if consistency_result.get("uid_match", {}).get("match") is False:
                 ocr_a = consistency_result.get("uid_match", {}).get("ocr_last4", "?")
                 qr_a  = consistency_result.get("uid_match", {}).get("qr_last4", "?")
                 reasons.append(f"Aadhaar last 4 digits mismatch — OCR read '{ocr_a}', QR says '{qr_a}'")
-                score += 0.15
+                score += 0.25
 
-    # Forensics / ResNet tampering classifier
+    # Photo comparison (QR photo vs card face)
+    photo_cmp = consistency_result.get("photo_comparison", {})
+    photo_decision = photo_cmp.get("decision", "UNAVAILABLE")
+    if photo_decision == "NO_MATCH":
+        reasons.append(f"Face photo mismatch — QR photo does not match card face (SSIM={photo_cmp.get('ssim', 0):.2f})")
+        score += 0.50  # photo swap is definitive fraud — push straight to Fake
+    elif photo_decision == "SUSPICIOUS":
+        reasons.append(f"Face photo similarity is low — possible substitution (SSIM={photo_cmp.get('ssim', 0):.2f})")
+        score += 0.25
     resnet_label   = tampering_result.get("label", "unknown")
     resnet_conf    = tampering_result.get("confidence", 0.0)
     forensics_data = tampering_result.get("forensics", {})

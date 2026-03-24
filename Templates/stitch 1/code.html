@@ -90,6 +90,28 @@
         border-color: #8083ff;
         box-shadow: 0 0 15px rgba(128, 131, 255, 0.2);
       }
+      /* Coming soon tooltip */
+      [data-soon] { position: relative; }
+      [data-soon]::after {
+        content: 'Coming soon';
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1c1f29;
+        color: #c7c4d7;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.08);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s;
+        z-index: 100;
+      }
+      [data-soon]:hover::after { opacity: 1; }
     </style>
 </head>
 <body class="antialiased overflow-hidden">
@@ -100,14 +122,14 @@
 </div>
 <div class="hidden md:flex items-center gap-8">
 <a class="text-[#8083ff] border-b-2 border-[#8083ff] pb-1 text-sm font-medium" href="#">Dashboard</a>
-<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#">Forensics</a>
-<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#">Archive</a>
-<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#">Network</a>
+<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Forensics</a>
+<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Archive</a>
+<a class="text-[#c7c4d7] hover:text-[#8083ff] transition-colors text-sm font-medium" href="#" data-soon>Network</a>
 </div>
 <div class="flex items-center gap-4">
-<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200">security</button>
-<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200">history</button>
-<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200">settings</button>
+<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200" data-soon>security</button>
+<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200" data-soon>history</button>
+<button class="material-symbols-outlined text-[#c7c4d7] hover:bg-[#1c1f29] transition-all duration-300 p-2 rounded-lg active:scale-95 duration-200" data-soon>settings</button>
 <div class="h-8 w-8 rounded-full overflow-hidden border border-white/10 ml-2">
 <img alt="User Profile" class="w-full h-full object-cover" data-alt="close-up portrait of a professional male system administrator with a focused expression in a dimly lit high-tech environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_6_fSfUddRuXweDm5R77FHmELXJBkbucKqKseiwrNeJ1-U1lENxnhVcOri7nBVeaqqfAtW4IpTnuPkNZj8dIM2rP0WOWwWTRaocgEcjDOixi3iFzkBsjNYpchZ7_htSziCraBWGYCgT9uQ-HR5_zX8GqO19Db14Z6kIXXGw7UNxw13EU4cJ37UB_xVKhLhG-4N-nEzCJS3TlQHvACBunBg4zDMAT-Imw4SE-Li0ahLKuBTmT7O-klFv8OgYWy9_eKD9x0TonVPpOg"/>
 </div>
@@ -125,25 +147,25 @@
 <span class="material-symbols-outlined">grid_view</span>
 <span>Dashboard</span>
 </div>
-<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer">
+<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer" data-soon>
 <span class="material-symbols-outlined">smart_card_reader</span>
 <span>Forensics</span>
 </div>
-<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer">
+<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer" data-soon>
 <span class="material-symbols-outlined">inventory_2</span>
 <span>Archive</span>
 </div>
-<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer">
+<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer" data-soon>
 <span class="material-symbols-outlined">hub</span>
 <span>Network</span>
 </div>
-<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer">
+<div class="text-[#c7c4d7] px-6 py-3 hover:bg-white/[0.02] hover:text-[#8083ff] transition-all flex items-center gap-3 font-['Inter'] text-sm font-medium tracking-wide cursor-pointer" data-soon>
 <span class="material-symbols-outlined">shield</span>
 <span>Security</span>
 </div>
 </nav>
 <div class="px-6 mt-auto">
-<button class="w-full bg-gradient-to-r from-primary-container to-secondary-container text-on-primary-fixed font-bold py-3 rounded-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(128,131,255,0.2)]">
+<button onclick="window.location.reload()" class="w-full bg-gradient-to-r from-[#8083ff] to-[#571bc1] text-white font-bold py-3 rounded-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(128,131,255,0.2)] cursor-pointer">
                     New Analysis
                 </button>
 </div>
@@ -178,7 +200,7 @@
 </div>
 </div>
 <!-- Image Preview Placeholder -->
-<div class="glass-card rounded-xl aspect-[1.58/1] flex items-center justify-center relative overflow-hidden group">
+<div class="glass-card rounded-xl aspect-[1.58/1] flex items-center justify-center relative group">
 <div class="absolute inset-0 bg-gradient-to-br from-primary-container/5 to-transparent"></div>
 <div class="flex flex-col items-center opacity-40 group-hover:opacity-60 transition-opacity">
 <span class="material-symbols-outlined text-5xl mb-2">image</span>
