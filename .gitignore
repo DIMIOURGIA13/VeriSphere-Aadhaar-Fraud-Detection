@@ -10,11 +10,6 @@ __pycache__/
 venv/
 env/
 
-# Model weights (large binary files)
-*.pt
-*.pth
-*.h5
-models/
 
 # Temp files
 temp_upload.jpg

@@ -1,4 +1,5 @@
 """
+ngrok http 5000
 py flask_app.py
 Flask web server for Aadhaar Fraud Detection
 Serves the Stitch HTML frontend and exposes /analyze API endpoint.

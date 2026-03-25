@@ -136,17 +136,32 @@ def run_pipeline(image_path, yolo_weights, resnet_weights=None, device="cpu",
         import base64 as _b64
         import io as _io
         converted = False
-        # Try Pillow first (needs imagecodecs for JP2)
-        try:
-            from PIL import Image as _Img
-            img = _Img.open(_io.BytesIO(bytes(_photo)))
-            buf = _io.BytesIO()
-            img.convert("RGB").save(buf, format="JPEG", quality=85)
-            consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf.getvalue()).decode()
-            converted = True
-        except Exception:
-            pass
-        # Fallback: OpenCV (handles JP2 natively on most builds)
+        # Try imagecodecs.jpeg2k_decode — correct API for JP2/J2K
+        if not converted:
+            try:
+                import imagecodecs
+                import numpy as _np
+                arr = imagecodecs.jpeg2k_decode(bytes(_photo))  # returns numpy array (H,W,C)
+                if arr is not None:
+                    from PIL import Image as _Img
+                    buf = _io.BytesIO()
+                    _Img.fromarray(arr).convert("RGB").save(buf, format="JPEG", quality=85)
+                    consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf.getvalue()).decode()
+                    converted = True
+            except Exception as _e:
+                print(f"[DEBUG] imagecodecs.jpeg2k_decode failed: {_e}")
+        # Fallback: Pillow (works if imagecodecs plugin is registered)
+        if not converted:
+            try:
+                from PIL import Image as _Img
+                img = _Img.open(_io.BytesIO(bytes(_photo)))
+                buf = _io.BytesIO()
+                img.convert("RGB").save(buf, format="JPEG", quality=85)
+                consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf.getvalue()).decode()
+                converted = True
+            except Exception as _e:
+                print(f"[DEBUG] Pillow JP2 failed: {_e}")
+        # Fallback: OpenCV
         if not converted:
             try:
                 import numpy as _np
@@ -156,10 +171,11 @@ def run_pipeline(image_path, yolo_weights, resnet_weights=None, device="cpu",
                     _, buf = cv2.imencode(".jpg", img_cv)
                     consistency["qr_parsed_data"]["photo_b64"] = _b64.b64encode(buf).decode()
                     converted = True
-            except Exception:
-                pass
+            except Exception as _e:
+                print(f"[DEBUG] OpenCV JP2 failed: {_e}")
         if not converted:
-            print("[DEBUG] photo: could not decode JP2 — imagecodecs or OpenCV JP2 support needed")
+            # dump first 16 bytes to help diagnose format
+            print(f"[DEBUG] photo decode failed. First bytes: {bytes(_photo)[:16].hex()}")
     _raw_qr_photo_for_compare = bytes(_photo) if _photo else None  # save before pop
     consistency["qr_parsed_data"].pop("photo", None)  # remove raw bytes
     consistency["qr_error"]       = qr_result.get("error")

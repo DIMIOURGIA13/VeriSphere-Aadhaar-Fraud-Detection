@@ -40,10 +40,10 @@ def make_decision(yolo_detections, verhoeff_result, consistency_result, tamperin
         reasons.append(f"YOLO confidence was pretty low ({avg_conf:.2f})")
         score += 0.10
 
-    # Verhoeff checksum — critical validation, strong penalty when it fails
+    # Verhoeff checksum — critical validation, card is Fake if this fails
     if not verhoeff_result.get("valid", False):
         reasons.append(f"Aadhaar number failed validation: {verhoeff_result.get('reason', '')}")
-        score += 0.30  # Verhoeff failure is a strong fraud signal
+        score += 0.45  # pushes score past 0.40 Fake threshold on its own
 
     # consistency between OCR and QR data
     if not consistency_result.get("format_check", {}).get("pattern_ok", True):

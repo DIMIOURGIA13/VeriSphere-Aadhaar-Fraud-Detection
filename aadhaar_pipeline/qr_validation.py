@@ -106,20 +106,23 @@ class QRValidator:
         Parse new/secure Aadhaar QR format (post-2018).
         Text fields are 0xFF-delimited. Photo (JPEG2000) is appended after
         the last text field as a continuous binary blob.
-        JPEG2000 signatures: b'\xff\x4f' (codestream) or b'\x00\x00\x00\x0c\x6a\x50' (JP2 box)
+        J2K codestream starts with SOC (ff4f) + SIZ (ff51) markers back-to-back.
+        JP2 file box starts with 0000000c6a502020.
         """
-        # JPEG2000 markers to search for
+        # Strict JPEG2000 signatures — require both SOC+SIZ for J2K codestream
+        # to avoid false positives on 0xff4f appearing inside text fields
         JP2_SIGS = [
-            b'\xff\x4f',                        # J2K codestream SOC marker
-            b'\x00\x00\x00\x0c\x6a\x50\x20\x20',  # JP2 file signature box
-            b'\xff\xd8\xff',                    # JPEG fallback
+            b'\xff\x4f\xff\x51',                    # J2K codestream: SOC + SIZ markers
+            b'\x00\x00\x00\x0c\x6a\x50\x20\x20',   # JP2 file signature box
+            b'\xff\xd8\xff\xe0',                    # JPEG (JFIF)
+            b'\xff\xd8\xff\xe1',                    # JPEG (EXIF)
         ]
 
-        # Find where the photo binary starts by scanning for JP2 signature
+        # Find where the photo binary starts
         photo_start = -1
         for sig in JP2_SIGS:
             idx = data.find(sig)
-            if idx > 10:  # must be after some text fields
+            if idx > 50:  # must be well after text fields
                 photo_start = idx
                 break
 
