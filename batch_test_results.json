@@ -1,0 +1,196 @@
+{
+  "total_tested": 20,
+  "verdicts": {
+    "Genuine": 12,
+    "Suspicious": 0,
+    "Fake": 8
+  },
+  "avg_fraud_score": 0.21400000000000002,
+  "details": [
+    {
+      "filename": "0521_adhar_jpg.rf.72e13b4a4ab63197d7bab138671ba17c.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.6,
+      "confidence": 0.6,
+      "reasons": [
+        "Aadhaar number failed validation: Expected 12 digits, got 11",
+        "Aadhaar number doesn't match the XXXX XXXX XXXX format"
+      ]
+    },
+    {
+      "filename": "06a0686f91bed47d1f4873e4d104442c_jpg.rf.4de248f1b4d17d260413ea9bdde71762.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "06a0686f91bed47d1f4873e4d104442c_jpg.rf.ca85802ebdca5a2f1f293741021a6645.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "06_01_2022_03_14_17_png_jpg.rf.84c131e9f3739196dcb217ce66872568.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.53,
+      "confidence": 0.53,
+      "reasons": [
+        "Couldn't detect these regions: dob",
+        "Aadhaar number failed validation: Verhoeff checksum failed \u2014 number may be tampered"
+      ]
+    },
+    {
+      "filename": "06_01_2022_03_14_51_png_jpg.rf.066ab05c8e52e0c8eb7f8160c29a5aae.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "06_01_2022_03_14_59_png_jpg.rf.7d753a7852c989342a25fbf67bf385e9.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "06_01_2022_03_15_10_png_jpg.rf.17c7b58f4770bbdfe37d7d6379c0d9b8.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "086d820550f34066764f4047ddc263ca_jpg.rf.32454616917066849f631ca30a4b828c.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "086d820550f34066764f4047ddc263ca_jpg.rf.a1db7cb32097409875a50ff57106348a.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.45,
+      "confidence": 0.45,
+      "reasons": [
+        "Aadhaar number failed validation: Verhoeff checksum failed \u2014 number may be tampered"
+      ]
+    },
+    {
+      "filename": "086d820550f34066764f4047ddc263ca_jpg.rf.ff9a8b4ea165aedc0d9b0e2f17aea548.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "0c0584201ff552c4bdcbe160315aa432_jpg.rf.55120e70e8bb77f855f46a2301544087.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "0c0584201ff552c4bdcbe160315aa432_jpg.rf.5942e1af703ab2365c8b22d581c90451.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.45,
+      "confidence": 0.45,
+      "reasons": [
+        "Aadhaar number failed validation: Aadhaar number can't start with 0 or 1"
+      ]
+    },
+    {
+      "filename": "0c0584201ff552c4bdcbe160315aa432_jpg.rf.e0c3309bc63eac6d5352733e8406f5bd.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.45,
+      "confidence": 0.45,
+      "reasons": [
+        "Aadhaar number failed validation: Verhoeff checksum failed \u2014 number may be tampered"
+      ]
+    },
+    {
+      "filename": "0d4c873ace54e82fb49c451a9bdc6d24_jpg.rf.02e7c632969d4ac3e220650714efc1ea.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.6,
+      "confidence": 0.6,
+      "reasons": [
+        "Aadhaar number failed validation: Expected 12 digits, got 1",
+        "Aadhaar number doesn't match the XXXX XXXX XXXX format"
+      ]
+    },
+    {
+      "filename": "0d4c873ace54e82fb49c451a9bdc6d24_jpg.rf.ace4d5e5287b475a42cc6ff51a027fda.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.6,
+      "confidence": 0.6,
+      "reasons": [
+        "Aadhaar number failed validation: Expected 12 digits, got 1",
+        "Aadhaar number doesn't match the XXXX XXXX XXXX format"
+      ]
+    },
+    {
+      "filename": "0d4c873ace54e82fb49c451a9bdc6d24_jpg.rf.bfdcbea6ad7d228da2021ff6325fd938.jpg",
+      "verdict": "Fake",
+      "fraud_score": 0.6,
+      "confidence": 0.6,
+      "reasons": [
+        "Aadhaar number failed validation: Expected 12 digits, got 1",
+        "Aadhaar number doesn't match the XXXX XXXX XXXX format"
+      ]
+    },
+    {
+      "filename": "0e0a5204f238d9c743ae456a8dc6529a_jpg.rf.4ec48c9c5e0e0a6ce056bf50d5201e60.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "0e0a5204f238d9c743ae456a8dc6529a_jpg.rf.667044735c41420c552f3757c5825819.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "0e0a5204f238d9c743ae456a8dc6529a_jpg.rf.c0818887a603326d955243418823a1ca.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    },
+    {
+      "filename": "0e0a5204f238d9c743ae456a8dc6529a_jpg.rf.c3ca9420de53c5d7b5a7234f51f53644.jpg",
+      "verdict": "Genuine",
+      "fraud_score": 0.0,
+      "confidence": 1.0,
+      "reasons": [
+        "All checks passed."
+      ]
+    }
+  ]
+}

@@ -159,9 +159,36 @@ When a QR code contains an embedded photo (eAadhaar digital cards):
 
 ---
 
+## Model Evaluation
+
+For generating results for your college report:
+
+```bash
+# Option 1: Use sample data (already generated)
+py evaluate_model.py
+
+# Option 2: Test on your own dataset
+# 1. Create test_images/ directory with genuine/ and fraud/ subdirectories
+# 2. Run batch testing
+py batch_test.py
+
+# 3. Copy y_true and y_pred arrays to evaluate_model.py
+# 4. Generate final evaluation
+py evaluate_model.py
+```
+
+This generates:
+- `confusion_matrix.png` — Visual confusion matrix (counts + percentages)
+- `metrics_visualization.png` — Bar chart of accuracy, precision, recall, F1
+- Console output with detailed interpretation for your report
+
+See `EVALUATION_GUIDE.md` for detailed instructions.
+
+---
+
 ## Notes
 
-- Model weights (`*.pt`, `*.h5`) are excluded from this repo via `.gitignore` due to file size
+- Model weights (`*.pt`, `*.h5`) are NOT ignored in `.gitignore` as they are necessary for the project
 - The system works best with clear, well-lit front-side scans
 - Secure-format QR codes (post-2018) do not store the full UID — handled gracefully with last-4 comparison
 - Physical printed cards typically don't embed photos in QR — only eAadhaar digital downloads do
